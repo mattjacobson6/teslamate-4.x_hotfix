@@ -1,6 +1,4 @@
 defmodule TeslaApi.Auth.Refresh do
-  import TeslaApi.Auth, only: [post: 2]
-
   alias TeslaApi.{Auth, Error}
 
   @web_client_id TeslaApi.Auth.web_client_id()
@@ -13,30 +11,52 @@ defmodule TeslaApi.Auth.Refresh do
         System.get_env("TESLA_AUTH_HOST", "") <> System.get_env("TESLA_AUTH_PATH", "")
       end
 
-    data = %{
-      grant_type: "refresh_token",
-      scope: "openid email offline_access",
-      client_id: System.get_env("TESLA_AUTH_CLIENT_ID", @web_client_id),
-      refresh_token: auth.refresh_token
-    }
+    url =
+      "#{issuer_url}/token#{System.get_env("TOKEN", "")}"
+      |> String.to_charlist()
 
-    case post(
-           "#{issuer_url}/token" <> System.get_env("TOKEN", ""),
-           data
+    body =
+      URI.encode_query(%{
+        grant_type: "refresh_token",
+        scope: "openid email offline_access",
+        client_id: System.get_env("TESLA_AUTH_CLIENT_ID", @web_client_id),
+        refresh_token: auth.refresh_token
+      })
+      |> String.to_charlist()
+
+    ssl_opts = [
+      verify: :verify_peer,
+      cacertfile: CAStore.file_path() |> String.to_charlist(),
+      server_name_indication: url |> List.to_string() |> URI.parse() |> Map.get(:host) |> String.to_charlist(),
+      depth: 4
+    ]
+
+    http_opts = [ssl: ssl_opts]
+
+    case :httpc.request(
+           :post,
+           {url, [], ~c"application/x-www-form-urlencoded", body},
+           http_opts,
+           body_format: :binary
          ) do
-      {:ok, %Tesla.Env{status: 200, body: body}} ->
-        auth = %Auth{
-          token: body["access_token"],
-          type: body["token_type"],
-          expires_in: body["expires_in"],
-          refresh_token: body["refresh_token"],
-          created_at: body["created_at"]
+      {:ok, {{_version, 200, _reason}, _headers, resp_body}} ->
+        parsed = Jason.decode!(resp_body)
+
+        updated_auth = %Auth{
+          token: parsed["access_token"],
+          type: parsed["token_type"],
+          expires_in: parsed["expires_in"],
+          refresh_token: parsed["refresh_token"],
+          created_at: parsed["created_at"]
         }
 
-        {:ok, auth}
+        {:ok, updated_auth}
 
-      error ->
-        Error.into(error, :token_refresh)
+      {:ok, {{_version, status, _reason}, _headers, resp_body}} ->
+        Error.into({:ok, %{status: status, body: resp_body}}, :token_refresh)
+
+      {:error, reason} ->
+        Error.into({:error, reason}, :token_refresh)
     end
   end
 end
