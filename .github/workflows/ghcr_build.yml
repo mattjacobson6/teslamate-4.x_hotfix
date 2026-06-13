@@ -26,11 +26,12 @@ permissions:
 
 jobs:
   check_paths:
+    if: github.event_name != 'workflow_dispatch'
     uses: ./.github/workflows/check_paths.yml
 
   check_if_pr_from_outside_repo:
     needs: check_paths
-    if: needs.check_paths.outputs.githubfolder == 'false'
+    if: github.event_name != 'workflow_dispatch' && needs.check_paths.outputs.githubfolder == 'false'
     uses: ./.github/workflows/check_if_pr_from_outside_repo.yml
 
   teslamate_build:
@@ -38,7 +39,11 @@ jobs:
     needs:
       - check_paths
       - check_if_pr_from_outside_repo
-    if: needs.check_paths.outputs.githubfolder == 'false' && needs.check_if_pr_from_outside_repo.outputs.is_pr_from_outside_repo == 'false'
+    if: |
+      always() && (
+        github.event_name == 'workflow_dispatch' ||
+        (needs.check_paths.outputs.githubfolder == 'false' && needs.check_if_pr_from_outside_repo.outputs.is_pr_from_outside_repo == 'false')
+      )
     strategy:
       fail-fast: false
       matrix:
@@ -71,7 +76,11 @@ jobs:
     needs:
       - check_paths
       - teslamate_build
-    if: needs.check_paths.outputs.githubfolder == 'false'
+    if: |
+      always() && needs.teslamate_build.result == 'success' && (
+        github.event_name == 'workflow_dispatch' ||
+        needs.check_paths.outputs.githubfolder == 'false'
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -93,7 +102,11 @@ jobs:
     needs:
       - check_paths
       - check_if_pr_from_outside_repo
-    if: needs.check_paths.outputs.githubfolder == 'false' && needs.check_if_pr_from_outside_repo.outputs.is_pr_from_outside_repo == 'false'
+    if: |
+      always() && (
+        github.event_name == 'workflow_dispatch' ||
+        (needs.check_paths.outputs.githubfolder == 'false' && needs.check_if_pr_from_outside_repo.outputs.is_pr_from_outside_repo == 'false')
+      )
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
