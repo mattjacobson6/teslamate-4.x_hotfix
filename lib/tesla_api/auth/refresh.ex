@@ -24,11 +24,16 @@ defmodule TeslaApi.Auth.Refresh do
       })
       |> String.to_charlist()
 
+    hostname = url |> List.to_string() |> URI.parse() |> Map.get(:host) |> String.to_charlist()
+
     ssl_opts = [
       verify: :verify_peer,
       cacertfile: CAStore.file_path() |> String.to_charlist(),
-      server_name_indication: url |> List.to_string() |> URI.parse() |> Map.get(:host) |> String.to_charlist(),
-      depth: 4
+      server_name_indication: hostname,
+      depth: 4,
+      customize_hostname_check: [
+        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+      ]
     ]
 
     http_opts = [ssl: ssl_opts]
